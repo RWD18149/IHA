@@ -1,0 +1,277 @@
+blueprint:
+  name: IHA Beschattung V5 18112024
+  description: Steuerung von Jalousien mit Fenster/Windalarm/Zeit/Sonnen Untergang
+  domain: automation
+  author: Patric Schneider
+  input:
+    shutter:
+      name: Jalousie/Rollladen
+      description: Wählen Sie die Jalousie oder den Rollladen aus, der gesteuert werden soll.
+      selector:
+        entity:
+          domain: cover
+    enable_jalousie_function:
+      name: Jalousie aktivieren
+      description: Boolean-Schalter, um die Fensterfunktion zu aktivieren oder zu deaktivieren
+      selector:
+        boolean: {}
+      default: false
+    enable_window_function:
+      name: Fensterfunktion aktivieren
+      description: Boolean-Schalter, um die Fensterfunktion zu aktivieren oder zu deaktivieren
+      selector:
+        boolean: {}
+      default: false
+    window_sensor:
+      name: Fenster-Sensor
+      description: Fenster-Sensor Auswählen
+      selector:
+        entity:
+          domain: binary_sensor
+      default: binary_sensor.default_window_sensor
+    wind_alarm:
+      name: Windalarm
+      description: Boolean-Schalter für Windalarm
+      selector:
+        entity:
+          domain: input_boolean
+    beschattung:
+      name: Beschattung
+      description: Boolean-Schalter für Beschattung Westen
+      selector:
+        entity:
+          domain: input_boolean
+    weekday_open_time:
+      name: Öffnungszeit Werktags
+      description: Zeit, zu der die Jalousie/Rollladen werktags geöffnet werden soll
+      selector:
+        time: {}
+      default: "07:30:00"
+    weekend_open_time:
+      name: Öffnungszeit Wochenende
+      description: Zeit, zu der die Jalousie/Rollladen am Wochenende geöffnet werden soll
+      selector:
+        time: {}
+      default: "09:00:00"
+    close_time:
+      name: Schließzeit
+      description: Zeit, zu der die Jalousie/Rollladen geschlossen werden soll
+      selector:
+        time: {}
+      default: "18:30:00"
+    open_position:
+      name: Position beim Öffnen
+      description: Position der Jalousie/Rollladen beim Öffnen (0-100)
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+      default: 100
+    tilt_position_open:
+      name: Neigungsposition beim Öffnen
+      description: Neigungsposition der Jalousie beim Öffnen (0-100), falls aktiviert
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+      default: 100
+    close_position:
+      name: Position beim Schließen
+      description: Position der Jalousie/Rollladen beim Schließen (0-100)
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+      default: 0
+    tilt_position_close:
+      name: Neigungsposition beim Schließen
+      description: Neigungsposition der Jalousie beim Schließen (0-100), falls aktiviert
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+      default: 0
+    Beschattung_position:
+      name: Position beim Beschattung
+      description: Position der Jalousie/Rollladen beim Beschatten (0-100)
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+      default: 50
+    Bechattung_position_close:
+      name: Neigungsposition beim Beschattung
+      description: Neigungsposition der Jalousie beim Beschattung (0-100), falls aktiviert
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+      default: 50
+    sunset_offset:
+      name: Verzögerung zum Sonnenuntergang
+      description: Zeitverzögerung für die Jalousieschließung nach Sonnenuntergang (positiv für nach, negativ für vor)
+      selector:
+        number:
+          min: -3600
+          max: 3600
+          unit_of_measurement: "seconds"
+      default: 1
+    tilt_delay_minutes:
+      name: Verzögerung für Neigungsanpassung
+      description: Verzögerung in Minuten, bevor die Neigungsposition nach dem Schließen angepasst wird, falls aktiviert
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: "minutes"
+      default: 30
+triggers:
+  - platform: time
+    at: !input weekday_open_time
+  - platform: time
+    at: !input weekend_open_time
+  - platform: time
+    at: !input close_time
+  - trigger: state
+    entity_id: !input wind_alarm
+  - trigger: state
+    entity_id: !input window_sensor
+  - platform: sun
+    event: sunset
+    offset: !input sunset_offset
+  - trigger: state
+    entity_id: !input beschattung
+
+
+conditions: []
+actions:
+  - alias: Fenster
+    if:
+      - condition: state
+        state: "on"
+        entity_id: !input window_sensor
+    then:
+      - action: cover.set_cover_position
+        metadata: {}
+        data:
+          position: !input open_position
+        target:
+          entity_id: !input shutter
+    enabled: !input enable_window_function
+  - alias: Windalarm
+    if:
+      - condition: state
+        entity_id: !input wind_alarm
+        state: "on"
+    then:
+      - action: cover.set_cover_position
+        metadata: {}
+        data:
+          position: !input open_position
+        target:
+          entity_id: !input shutter
+  - alias: Öffnen Werktags
+    if:
+      - condition: time
+        after: !input weekday_open_time
+        weekday:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+    then:
+      - action: cover.set_cover_position
+        metadata: {}
+        data:
+          position: !input open_position
+        target:
+          entity_id: !input shutter
+  - alias: Öffnen Wochenende
+    if:
+      - condition: time
+        after: !input weekend_open_time
+        weekday:
+          - sat
+          - sun
+    then:
+      - action: cover.set_cover_position
+        metadata: {}
+        data:
+          position: !input open_position
+        target:
+          entity_id: !input shutter
+  - alias: Schließen
+    if:
+      - condition: and
+        conditions:
+          - condition: or
+            conditions:
+              - condition: time
+                after: !input close_time
+              - condition: sun
+                after: sunset
+                after_offset: "00:00:01"
+          - condition: state
+            entity_id: !input wind_alarm
+            state: "off"
+          - condition: state
+            state: "off"
+            entity_id: !input window_sensor
+    then:
+      - action: cover.set_cover_position
+        metadata: {}
+        data:
+          position: !input close_position
+        target:
+          entity_id: !input shutter
+      - action: cover.set_cover_tilt_position
+        metadata: {}
+        data:
+          tilt_position: !input tilt_position_close
+        target:
+          entity_id: !input shutter
+        enabled: !input enable_jalousie_function
+      - delay: !input tilt_delay_minutes
+        enabled: !input enable_jalousie_function
+      - action: cover.set_cover_tilt_position
+        metadata: {}
+        data:
+          tilt_position: !input tilt_position_close
+        target:
+          entity_id: !input shutter
+        enabled: !input enable_jalousie_function
+  - alias: Beschattung
+    if:
+      - condition: and
+        conditions:
+          - condition: state
+            entity_id: !input wind_alarm
+            state: "off"
+          - condition: state
+            state: "off"
+            entity_id: !input window_sensor
+          - condition: state
+            entity_id: !input beschattung
+            state: "on"
+    then:
+      - action: cover.set_cover_position
+        metadata: {}
+        data:
+          position: !input Beschattung_position
+        target:
+          entity_id: !input shutter
+      - action: cover.set_cover_tilt_position
+        metadata: {}
+        data:
+          tilt_position: !input Bechattung_position_close
+        target:
+          entity_id: !input shutter
+        enabled: !input enable_jalousie_function
+mode: single
