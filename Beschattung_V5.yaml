@@ -142,6 +142,7 @@ triggers:
     entity_id: !input wind_alarm
   - trigger: state
     entity_id: !input window_sensor
+    enabled: !input enable_window_function
   - platform: sun
     event: sunset
     offset: !input sunset_offset
@@ -234,7 +235,7 @@ actions:
       - action: cover.set_cover_tilt_position
         metadata: {}
         data:
-          tilt_position: !input tilt_position_close
+          tilt_position: 100
         target:
           entity_id: !input shutter
         enabled: !input enable_jalousie_function
