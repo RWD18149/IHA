@@ -232,6 +232,11 @@ actions:
           position: !input close_position
         target:
           entity_id: !input shutter
+      - delay:
+          hours: 0
+          minutes: 1
+          seconds: 0
+          milliseconds: 0
       - action: cover.set_cover_tilt_position
         metadata: {}
         data:
