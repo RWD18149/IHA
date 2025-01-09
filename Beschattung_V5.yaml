@@ -188,10 +188,10 @@ actions:
           - thu
           - fri
     then:
-      - action: cover.set_cover_position
-        metadata: {}
-        data:
-          position: !input open_position
+      - action: cover.open_cover
+ #       metadata: {}
+#        data:
+#          position: !input open_position
         target:
           entity_id: !input shutter
   - alias: Öffnen Wochenende
