@@ -1,8 +1,9 @@
 blueprint:
-  name: IHA Beschattung V8.1 26102026
+  name: IHA Beschattung V8.2 26102026
   description: >
     Steuerung von Jalousien und Rollläden mit Fenster Priorität, Windalarm, Zeitplan,
-    Sonnenuntergang und Beschattung. Fenster offen und Windalarm haben immer Vorrang.
+    Sonnenuntergang und Beschattung. Geschlossen wird wahlweise zur Schließzeit,
+    bei Sonnenuntergang oder bei beidem (je nachdem, was zuerst eintritt). Fenster offen und Windalarm haben immer Vorrang.
     Nachts (Schließzeit bzw. Sonnenuntergang bis Öffnungszeit) wird bei jeder Änderung
     wieder geschlossen, tagsüber wird geöffnet oder beschattet.
   domain: automation
@@ -52,9 +53,24 @@ blueprint:
         time: {}
       default: "18:30:00"
 
+    close_mode:
+      name: Schließen nach
+      description: Wann abends geschlossen werden soll
+      default: beides
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: Nur Schließzeit
+              value: zeit
+            - label: Nur Sonnenuntergang
+              value: sonnenuntergang
+            - label: Beides (was zuerst eintritt)
+              value: beides
+
     sunset_time:
       name: Versatz nach Sonnenuntergang
-      description: Offset nach Sonnenuntergang (z. B. 00:15:00)
+      description: Offset nach Sonnenuntergang (z. B. 00:15:00), nur relevant ohne „Nur Schließzeit“
       default: "00:00:00"
       selector:
         time: {}
@@ -182,13 +198,18 @@ variables:
   weekday_open: !input weekday_open_time
   weekend_open: !input weekend_open_time
   close_t: !input close_time
+  close_mode: !input close_mode
+  use_time: "{{ close_mode in ['zeit', 'beides'] }}"
+  use_sun: "{{ close_mode in ['sonnenuntergang', 'beides'] }}"
   window_open_now: "{{ enable_window and window_entity != '' and is_state(window_entity, 'on') }}"
   wind_on_now: "{{ wind_entity != '' and is_state(wind_entity, 'on') }}"
   shade_on_now: "{{ shade_entity != '' and is_state(shade_entity, 'on') }}"
   is_night: >
     {% set t = now().strftime('%H:%M:%S') %}
     {% set open_t = weekday_open if now().weekday() < 5 else weekend_open %}
-    {{ t >= close_t or t < open_t or (is_state('sun.sun', 'below_horizon') and t >= '12:00:00') }}
+    {{ (use_time and t >= close_t)
+       or t < open_t
+       or (use_sun and is_state('sun.sun', 'below_horizon') and t >= '12:00:00') }}
 
 conditions: []
 
@@ -215,15 +236,24 @@ actions:
               entity_id: "{{ shutter_entity }}"
           - stop: "Windalarm aktiv, Cover hoch"
 
-  # 3) Nachtzustand: zur Schließzeit, bei Sonnenuntergang oder bei jeder Änderung in der Nacht
+  # 3) Nachtzustand: je nach Schließmodus zur Schließzeit und/oder bei Sonnenuntergang,
+  #    außerdem bei jeder Änderung in der Nacht
   - choose:
       - conditions:
           - condition: or
             conditions:
-              - condition: trigger
-                id:
-                  - close_time
-                  - close_sunset
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: close_time
+                  - condition: template
+                    value_template: "{{ use_time }}"
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: close_sunset
+                  - condition: template
+                    value_template: "{{ use_sun }}"
               - condition: and
                 conditions:
                   - condition: trigger
