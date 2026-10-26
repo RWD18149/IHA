@@ -1,0 +1,328 @@
+blueprint:
+  name: IHA Beschattung V7 07012026
+  description: >
+    Steuerung von Jalousien/Rollläden mit Fenster Priorität, Windalarm, Zeitplan,
+    Sonnenuntergang und Beschattung. Fenster offen hat immer Priorität (oben bleiben).
+    Beim Schließen wird der Zielzustand neu berechnet.
+  domain: automation
+  author: Patric Schneider
+
+  input:
+    shutter:
+      name: Jalousie/Rollladen
+      description: Zu steuerndes Cover
+      selector:
+        entity:
+          domain: cover
+
+    enable_window_function:
+      name: Fensterfunktion aktivieren
+      description: Fensterlogik aktivieren
+      selector:
+        boolean: {}
+      default: false
+
+    fenster:
+      name: Fenster
+      description: Fensterkontakt (binary_sensor window)
+      default: {}
+      selector:
+        entity:
+          filter:
+            device_class: window
+            domain: binary_sensor
+
+    weekday_open_time:
+      name: Öffnungszeit Werktags
+      selector:
+        time: {}
+      default: "07:30:00"
+
+    weekend_open_time:
+      name: Öffnungszeit Wochenende
+      selector:
+        time: {}
+      default: "09:00:00"
+
+    close_time:
+      name: Schließzeit
+      selector:
+        time: {}
+      default: "18:30:00"
+
+    sunset_time:
+      name: Versatz nach Sonnenuntergang
+      description: Offset nach Sunset (z. B. 00:15:00)
+      default: "00:00:00"
+      selector:
+        time: {}
+
+    jalousie_ja:
+      name: Jalousie
+      description: Wenn true, wird zusätzlich Tilt gesetzt
+      default: false
+      selector:
+        boolean: {}
+
+    windalarm:
+      name: Windalarm
+      selector:
+        entity:
+          filter:
+            domain: input_boolean
+
+    beschattung:
+      name: Beschattung (z. B. Westen)
+      selector:
+        entity:
+          filter:
+            domain: input_boolean
+
+    position_close:
+      name: Position bei geschlossen
+      default: 30
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 0
+          max: 100
+
+    position_beschattung:
+      name: Position Beschattung
+      default: 50
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 0
+          max: 100
+
+    neigung_beschattung:
+      name: Neigung bei Beschattung
+      default: 50
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 0
+          max: 100
+
+    neigung_geschlossen:
+      name: Neigung bei geschlossen
+      default: 50
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 0
+          max: 100
+
+mode: restart
+
+variables:
+  shutter_entity: !input shutter
+  enable_window: !input enable_window_function
+  window_entity: !input fenster
+  wind_entity: !input windalarm
+  shade_entity: !input beschattung
+  is_jalousie: !input jalousie_ja
+  pos_close: !input position_close
+  pos_shade: !input position_beschattung
+  tilt_shade: !input neigung_beschattung
+  tilt_close: !input neigung_geschlossen
+
+trigger:
+  - platform: time
+    at: !input weekday_open_time
+    id: open_weekday
+
+  - platform: time
+    at: !input weekend_open_time
+    id: open_weekend
+
+  - platform: time
+    at: !input close_time
+    id: close_time
+
+  - platform: sun
+    event: sunset
+    offset: !input sunset_time
+    id: close_sunset
+
+  - platform: state
+    entity_id: !input windalarm
+    to: "on"
+    not_from: ["unavailable", "unknown"]
+    id: wind_on
+
+  - platform: state
+    entity_id: !input windalarm
+    to: "off"
+    not_from: ["unavailable", "unknown"]
+    id: wind_off
+
+  - platform: state
+    entity_id: !input beschattung
+    to: "on"
+    not_from: ["unavailable", "unknown"]
+    id: shade_on
+
+  - platform: state
+    entity_id: !input beschattung
+    to: "off"
+    not_from: ["unavailable", "unknown"]
+    id: shade_off
+
+  - platform: state
+    entity_id: !input fenster
+    to: "on"
+    not_from: ["unavailable", "unknown"]
+    id: window_open
+    enabled: !input enable_window_function
+
+  - platform: state
+    entity_id: !input fenster
+    to: "off"
+    not_from: ["unavailable", "unknown"]
+    id: window_closed
+    enabled: !input enable_window_function
+
+action:
+  # 1) Fenster offen hat immer Priorität: hoch und oben bleiben
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ enable_window and window_entity is not none and is_state(window_entity, 'on') }}"
+        sequence:
+          - service: cover.open_cover
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - stop: "Fenster offen -> Cover bleibt oben"
+
+  # 2) Windalarm hat Priorität: hoch
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: !input windalarm
+            state: "on"
+        sequence:
+          - service: cover.open_cover
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - stop: "Windalarm aktiv -> Cover hoch"
+
+  # 3) Abends schließen (einmalig, egal ob Zeit oder Sunset Offset)
+  - choose:
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: close_time
+              - condition: trigger
+                id: close_sunset
+              # falls Fenster geschlossen oder Windalarm aus oder Beschattung toggled nach Abends -> neu bewerten
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id:
+                      - window_closed
+                      - wind_off
+                      - shade_on
+                      - shade_off
+                  - condition: or
+                    conditions:
+                      - condition: time
+                        after: !input close_time
+                      - condition: sun
+                        after: sunset
+                        after_offset: !input sunset_time
+        sequence:
+          - service: cover.set_cover_position
+            data:
+              position: "{{ pos_close }}"
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ is_jalousie }}"
+                sequence:
+                  - delay: "00:30:00"
+                  - service: cover.set_cover_tilt_position
+                    data:
+                      tilt_position: "{{ tilt_close }}"
+                    target:
+                      entity_id: "{{ shutter_entity }}"
+          - stop: "Abendzustand gesetzt"
+
+  # 4) Tagsüber Beschattung (wenn aktiv)
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: !input beschattung
+            state: "on"
+          - condition: time
+            after: "08:00:00"
+            before: "19:00:00"
+          # wenn Fensterfunktion aktiv ist, ist Fenster hier sowieso geschlossen (Block 1 hätte sonst gestoppt)
+        sequence:
+          - service: cover.set_cover_position
+            data:
+              position: "{{ pos_shade }}"
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ is_jalousie }}"
+                sequence:
+                  - service: cover.set_cover_tilt_position
+                    data:
+                      tilt_position: "{{ tilt_shade }}"
+                    target:
+                      entity_id: "{{ shutter_entity }}"
+          - stop: "Beschattung gesetzt"
+
+  # 5) Morgens öffnen (nur zu den Öffnungs-Triggers)
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: open_weekday
+          - condition: time
+            weekday: [mon, tue, wed, thu, fri]
+        sequence:
+          - service: cover.open_cover
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - stop: "Werktags geöffnet"
+
+      - conditions:
+          - condition: trigger
+            id: open_weekend
+          - condition: time
+            weekday: [sat, sun]
+        sequence:
+          - service: cover.open_cover
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - stop: "Wochenende geöffnet"
+
+  # 6) Re-Evaluate wenn Fenster geschlossen / Windalarm aus / Beschattung toggled am Tag
+  # Zielzustand tagsüber ohne Beschattung: offen. Nur wenn die Sonne wirklich
+  # über dem Horizont steht, sonst passiert nachts nichts.
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - window_closed
+              - wind_off
+              - shade_on
+              - shade_off
+          - condition: state
+            entity_id: sun.sun
+            state: above_horizon
+        sequence:
+          - service: cover.open_cover
+            target:
+              entity_id: "{{ shutter_entity }}"
+          - stop: "Tageszustand -> offen"
+
+  # 7) Optional: Wenn vor Öffnungszeit Fenster schließt, bleibt es geschlossen (keine Aktion).
+  - stop: "Keine passende Aktion"
