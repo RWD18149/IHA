@@ -1,5 +1,5 @@
 blueprint:
-  name: IHA Beschattung V8 26102026
+  name: IHA Beschattung V8.1 26102026
   description: >
     Steuerung von Jalousien und Rollläden mit Fenster Priorität, Windalarm, Zeitplan,
     Sonnenuntergang und Beschattung. Fenster offen und Windalarm haben immer Vorrang.
@@ -67,14 +67,16 @@ blueprint:
         boolean: {}
 
     windalarm:
-      name: Windalarm
+      name: Windalarm (optional)
+      default: ""
       selector:
         entity:
           filter:
             domain: input_boolean
 
     beschattung:
-      name: Beschattung (z. B. Westen)
+      name: Beschattung (optional, z. B. Westen)
+      default: ""
       selector:
         entity:
           filter:
@@ -121,6 +123,8 @@ mode: restart
 trigger_variables:
   t_window: !input fenster
   t_window_enabled: !input enable_window_function
+  t_wind: !input windalarm
+  t_shade: !input beschattung
 
 triggers:
   - trigger: time
@@ -140,28 +144,20 @@ triggers:
     offset: !input sunset_time
     id: close_sunset
 
-  - trigger: state
-    entity_id: !input windalarm
-    to: "on"
-    not_from: ["unavailable", "unknown"]
+  - trigger: template
+    value_template: "{{ t_wind != '' and is_state(t_wind, 'on') }}"
     id: wind_on
 
-  - trigger: state
-    entity_id: !input windalarm
-    to: "off"
-    not_from: ["unavailable", "unknown"]
+  - trigger: template
+    value_template: "{{ t_wind != '' and is_state(t_wind, 'off') }}"
     id: wind_off
 
-  - trigger: state
-    entity_id: !input beschattung
-    to: "on"
-    not_from: ["unavailable", "unknown"]
+  - trigger: template
+    value_template: "{{ t_shade != '' and is_state(t_shade, 'on') }}"
     id: shade_on
 
-  - trigger: state
-    entity_id: !input beschattung
-    to: "off"
-    not_from: ["unavailable", "unknown"]
+  - trigger: template
+    value_template: "{{ t_shade != '' and is_state(t_shade, 'off') }}"
     id: shade_off
 
   - trigger: template
@@ -176,6 +172,8 @@ variables:
   shutter_entity: !input shutter
   enable_window: !input enable_window_function
   window_entity: !input fenster
+  wind_entity: !input windalarm
+  shade_entity: !input beschattung
   is_jalousie: !input jalousie_ja
   pos_close: !input position_close
   pos_shade: !input position_beschattung
@@ -185,6 +183,8 @@ variables:
   weekend_open: !input weekend_open_time
   close_t: !input close_time
   window_open_now: "{{ enable_window and window_entity != '' and is_state(window_entity, 'on') }}"
+  wind_on_now: "{{ wind_entity != '' and is_state(wind_entity, 'on') }}"
+  shade_on_now: "{{ shade_entity != '' and is_state(shade_entity, 'on') }}"
   is_night: >
     {% set t = now().strftime('%H:%M:%S') %}
     {% set open_t = weekday_open if now().weekday() < 5 else weekend_open %}
@@ -207,9 +207,8 @@ actions:
   # 2) Windalarm hat Vorrang: hoch
   - choose:
       - conditions:
-          - condition: state
-            entity_id: !input windalarm
-            state: "on"
+          - condition: template
+            value_template: "{{ wind_on_now }}"
         sequence:
           - action: cover.open_cover
             target:
@@ -256,11 +255,8 @@ actions:
   # 4) Tagsüber Beschattung, wenn aktiv (auch direkt zur Öffnungszeit)
   - choose:
       - conditions:
-          - condition: state
-            entity_id: !input beschattung
-            state: "on"
           - condition: template
-            value_template: "{{ not is_night }}"
+            value_template: "{{ shade_on_now and not is_night }}"
         sequence:
           - action: cover.set_cover_position
             data:
