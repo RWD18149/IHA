@@ -1,0 +1,151 @@
+blueprint:
+  name: IHA Referenzfahrt V1.1
+  description: >
+    Startet zu einer festen Zeit an ausgewählten Wochentagen die Referenzfahrt der
+    Jalousie- und Rollladenaktoren (z. B. KNX-Taster oder Szene). Wird übersprungen,
+    solange ein Fenster oder eine Tür offen ist oder ein Windalarm aktiv ist, damit
+    niemand ausgesperrt wird und nichts beschädigt wird. Mit einem Mindestabstand
+    (z. B. 25 Tage) läuft sie nur etwa einmal im Monat: am ersten erlaubten Tag nach
+    Ablauf des Abstands. Wird sie übersprungen, folgt der nächste Versuch am nächsten
+    erlaubten Tag.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/Referenzfahrt_V1.yaml
+  input:
+    targets:
+      name: Referenzfahrt auslösen
+      description: Taster, Skripte oder Szenen, die die Referenzfahrt starten
+      selector:
+        entity:
+          domain:
+            - button
+            - input_button
+            - script
+            - scene
+          multiple: true
+    run_time:
+      name: Uhrzeit
+      default: "03:00:00"
+      selector:
+        time: {}
+    weekdays:
+      name: Wochentage
+      default: [sun]
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Montag
+              value: mon
+            - label: Dienstag
+              value: tue
+            - label: Mittwoch
+              value: wed
+            - label: Donnerstag
+              value: thu
+            - label: Freitag
+              value: fri
+            - label: Samstag
+              value: sat
+            - label: Sonntag
+              value: sun
+    min_days:
+      name: Mindestabstand zur letzten Referenzfahrt (Tage)
+      description: 0 = an jedem gewählten Tag, 25 = etwa einmal im Monat
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: Tage
+    sicherheit:
+      name: Sicherheit (optional)
+      icon: mdi:shield-check
+      collapsed: true
+      input:
+        windows:
+          name: Nicht fahren, wenn offen
+          description: Fenster und Türen, vor denen Rollläden oder Jalousien fahren
+          default: []
+          selector:
+            entity:
+              domain: binary_sensor
+              multiple: true
+        wind_alarms:
+          name: Nicht fahren bei Windalarm
+          default: []
+          selector:
+            entity:
+              domain: input_boolean
+              multiple: true
+    benachrichtigung:
+      name: Benachrichtigung (optional)
+      icon: mdi:cellphone-message
+      collapsed: true
+      input:
+        notify_actions:
+          name: Benachrichtigungs-Aktionen
+          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric
+          default: []
+          selector:
+            text:
+              multiple: true
+
+triggers:
+  - trigger: time
+    at: !input run_time
+
+conditions:
+  - condition: time
+    weekday: !input weekdays
+
+variables:
+  targets: !input targets
+  windows: !input windows
+  wind_alarms: !input wind_alarms
+  notify_list: !input notify_actions
+  min_days: !input min_days
+  days_since: >
+    {% set ns = namespace(t=[]) %}
+    {% for e in targets %}
+      {% set raw = state_attr(e, 'last_triggered') if e.startswith('script.') else states(e) %}
+      {% set dt = as_datetime(raw | string, none) %}
+      {% if dt is not none %}{% set ns.t = ns.t + [dt] %}{% endif %}
+    {% endfor %}
+    {{ (now() - (ns.t | max)).days if ns.t | length > 0 else 999 }}
+  open_windows: "{{ windows | select('is_state', 'on') | list }}"
+  wind_active: "{{ wind_alarms | select('is_state', 'on') | list | length > 0 }}"
+  blocked: "{{ open_windows | length > 0 or wind_active }}"
+  reason: >
+    {% if wind_active %}Windalarm aktiv{% else %}offen: {{ open_windows | map('state_attr', 'friendly_name') | join(', ') }}{% endif %}
+
+actions:
+  # Mindestabstand noch nicht erreicht: still beenden
+  - condition: template
+    value_template: "{{ days_since | int >= min_days | int }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ not blocked }}"
+    then:
+      - repeat:
+          for_each: "{{ targets }}"
+          sequence:
+            - action: >
+                {{ {'button': 'button.press', 'input_button': 'input_button.press',
+                    'script': 'script.turn_on', 'scene': 'scene.turn_on'}[repeat.item.split('.')[0]] }}
+              continue_on_error: true
+              target:
+                entity_id: "{{ repeat.item }}"
+
+  - repeat:
+      for_each: "{{ notify_list }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: Referenzfahrt
+            message: >
+              {% if blocked %}Übersprungen ({{ reason }}).{% else %}Gestartet.{% endif %}
+
+mode: single
