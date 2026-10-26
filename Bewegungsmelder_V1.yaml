@@ -1,5 +1,5 @@
 blueprint:
-  name: Bewegungslicht
+  name: IHA Bewegungslicht V1.1 26102026 
   description: >
     Schaltet Lichter bei Bewegung ein und nach Ablauf der Nachlaufzeit aus.
     Die Ausschalt-Liste kann mehr Lichter enthalten als die Einschalt-Liste.
