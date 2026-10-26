@@ -1,0 +1,183 @@
+blueprint:
+  name: IHA Auto-Update V1
+  description: >
+    Installiert Updates automatisch und vorsichtig. Home Assistant Core erst ab einer
+    bestimmten Patch-Version (z. B. 2026.11.2), alle anderen Updates (Add-ons, HACS,
+    Betriebssystem) erst, wenn sie seit einer einstellbaren Anzahl Tagen verfügbar sind.
+    Wo möglich wird vor dem Update eine Sicherung erstellt. Am Ende folgt bei Bedarf ein Neustart.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/IHA_Updates.yaml
+  input:
+    update_time:
+      name: Uhrzeit
+      description: Wann Updates installiert werden (am besten nach der nächtlichen Sicherung)
+      default: "04:00:00"
+      selector:
+        time: {}
+    weekdays:
+      name: Wochentage
+      description: An welchen Tagen Updates installiert werden dürfen
+      default: [mon, tue, wed, thu]
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Montag
+              value: mon
+            - label: Dienstag
+              value: tue
+            - label: Mittwoch
+              value: wed
+            - label: Donnerstag
+              value: thu
+            - label: Freitag
+              value: fri
+            - label: Samstag
+              value: sat
+            - label: Sonntag
+              value: sun
+    core_entity:
+      name: Home Assistant Core
+      default: update.home_assistant_core_update
+      selector:
+        entity:
+          domain: update
+    core_min_patch:
+      name: Core erst ab Patch-Version
+      description: 2 bedeutet, aus 2026.11.0 und .1 wird nichts, ab 2026.11.2 wird installiert
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 9
+    os_entity:
+      name: Betriebssystem
+      default: update.home_assistant_operating_system_update
+      selector:
+        entity:
+          domain: update
+    delay_days:
+      name: Wartezeit für alle anderen Updates (Tage)
+      default: 7
+      selector:
+        number:
+          min: 0
+          max: 30
+          unit_of_measurement: Tage
+    exclude:
+      name: Ausnehmen
+      description: Updates, die nie automatisch installiert werden sollen
+      default: []
+      selector:
+        entity:
+          domain: update
+          multiple: true
+    notify_action:
+      name: Benachrichtigung (optional)
+      description: Aktion für Push-Nachrichten, z. B. notify.mobile_app_patrics_iphone
+      default: ""
+      selector:
+        text: {}
+
+triggers:
+  - trigger: time
+    at: !input update_time
+
+conditions:
+  - condition: time
+    weekday: !input weekdays
+
+variables:
+  core_e: !input core_entity
+  os_e: !input os_entity
+  min_patch: !input core_min_patch
+  delay_days: !input delay_days
+  excl: !input exclude
+  notify_action: !input notify_action
+  cutoff: "{{ now() - timedelta(days=delay_days | int) }}"
+  core_ok: >
+    {% set lv = (state_attr(core_e, 'latest_version') or '') | string %}
+    {% set p = lv.split('.') %}
+    {{ is_state(core_e, 'on') and p | length >= 3 and (p[2] | int(0)) >= (min_patch | int) }}
+  os_ok: >
+    {{ is_state(os_e, 'on') and states[os_e].last_updated < now() - timedelta(days=delay_days | int) }}
+  others: >
+    {% set ns = namespace(l=[]) %}
+    {% for s in states.update
+         if s.state == 'on'
+         and s.entity_id not in excl
+         and s.entity_id not in [core_e, os_e]
+         and s.last_updated < now() - timedelta(days=delay_days | int) %}
+      {% set ns.l = ns.l + [s.entity_id] %}
+    {% endfor %}
+    {{ ns.l }}
+  hacs_list: "{{ integration_entities('hacs') }}"
+  needs_restart: "{{ others | select('in', hacs_list) | list | length > 0 }}"
+  summary: >
+    {% set names = others | map('state_attr', 'friendly_name') | list %}
+    {% if core_ok %}{% set names = names + ['Home Assistant Core ' ~ state_attr(core_e, 'latest_version')] %}{% endif %}
+    {% if os_ok %}{% set names = names + ['Betriebssystem ' ~ state_attr(os_e, 'latest_version')] %}{% endif %}
+    {{ names | join(', ') }}
+
+actions:
+  - condition: template
+    value_template: "{{ others | length > 0 or core_ok or os_ok }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ notify_action != '' }}"
+    then:
+      - action: "{{ notify_action }}"
+        continue_on_error: true
+        data:
+          title: "Updates {{ state_attr('zone.home', 'friendly_name') }}"
+          message: "Installiere: {{ summary }}"
+
+  # 1) Add-ons, HACS und sonstige Updates nacheinander
+  - repeat:
+      for_each: "{{ others }}"
+      sequence:
+        - if:
+            - condition: template
+              value_template: "{{ ((state_attr(repeat.item, 'supported_features') | int(0)) // 8) % 2 == 1 }}"
+          then:
+            - action: update.install
+              continue_on_error: true
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                backup: true
+          else:
+            - action: update.install
+              continue_on_error: true
+              target:
+                entity_id: "{{ repeat.item }}"
+
+  # 2) Core zuletzt, der Neustart erledigt auch den für HACS nötigen Neustart
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ core_ok }}"
+        sequence:
+          - action: update.install
+            continue_on_error: true
+            target:
+              entity_id: "{{ core_e }}"
+            data:
+              backup: true
+      - conditions:
+          - condition: template
+            value_template: "{{ os_ok }}"
+        sequence:
+          - action: update.install
+            continue_on_error: true
+            target:
+              entity_id: "{{ os_e }}"
+      - conditions:
+          - condition: template
+            value_template: "{{ needs_restart }}"
+        sequence:
+          - action: homeassistant.restart
+
+mode: single
