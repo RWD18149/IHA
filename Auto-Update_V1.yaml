@@ -7,7 +7,7 @@ blueprint:
     Wo möglich wird vor dem Update eine Sicherung erstellt. Am Ende folgt bei Bedarf ein Neustart.
   domain: automation
   author: Patric Schneider
-  source_url: https://github.com/RWD18149/IHA/blob/main/IHA_Updates.yaml
+  source_url: https://github.com/RWD18149/IHA/blob/main/Auto-Update_V1.yaml
   input:
     update_time:
       name: Uhrzeit
