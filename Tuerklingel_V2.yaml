@@ -1,39 +1,19 @@
 blueprint:
-  name: IHA Türklingel V1
+  name: IHA Türklingel V2
   description: >
-    Reagiert auf die Türklingel per Webhook und/oder Klingel-Entität. Macht ein Kamerabild,
-    lässt tagsüber Alexa-Geräte klingeln, lässt nachts stattdessen Lichter blinken und
-    schickt eine Benachrichtigung mit Bild. Mehrfaches Klingeln innerhalb der Sperrzeit
-    wird ignoriert.
-  domain: automation
+    Skript für die Türklingel. Wird von einer beliebigen Automation gestartet
+    (Webhook, Klingel-Entität, KNX-Taster usw.). Macht ein Kamerabild, lässt tagsüber
+    Alexa-Geräte klingeln, lässt nachts Lichter blinken und schickt eine Benachrichtigung
+    mit Bild. Alle Funktionen sind optional und nur aktiv, wenn das Feld ausgefüllt ist.
+    Erneutes Klingeln während der Sperrzeit wird ignoriert.
+  domain: script
   author: Patric Schneider
-  source_url: https://github.com/RWD18149/IHA/blob/main/Tuerklingel_V1.yaml
+  source_url: https://github.com/RWD18149/IHA/blob/main/Tuerklingel_V2.yaml
   input:
-    ausloeser:
-      name: Auslöser
+    allgemein:
+      name: Allgemein
       icon: mdi:doorbell
       input:
-        webhook_id:
-          name: Webhook-ID
-          description: Eindeutige, schwer zu erratende ID, die die Klingel aufruft. Nicht veröffentlichen.
-          default: iha_tuerklingel_bitte_aendern
-          selector:
-            text: {}
-        webhook_local_only:
-          name: Webhook nur im Heimnetz erlauben
-          description: Empfohlen, wenn die Klingel im selben Netzwerk hängt
-          default: true
-          selector:
-            boolean: {}
-        bell_entity:
-          name: Klingel-Entität (optional)
-          description: Binärsensor oder Ereignis-Entität der Klingel, falls vorhanden
-          default: ""
-          selector:
-            entity:
-              domain:
-                - binary_sensor
-                - event
         popup_boolean:
           name: Hilfsschalter für das Dashboard-Popup (optional)
           description: Wird für 30 Sekunden eingeschaltet
@@ -163,26 +143,7 @@ blueprint:
           selector:
             text: {}
 
-trigger_variables:
-  t_bell: !input bell_entity
-
-triggers:
-  - trigger: webhook
-    webhook_id: !input webhook_id
-    allowed_methods:
-      - GET
-      - POST
-    local_only: !input webhook_local_only
-  - trigger: template
-    value_template: >
-      {{ t_bell != '' and t_bell.startswith('binary_sensor.') and is_state(t_bell, 'on') }}
-  - trigger: event
-    event_type: state_changed
-    event_data:
-      entity_id: !input bell_entity
-
 variables:
-  bell_entity: !input bell_entity
   popup: !input popup_boolean
   cooldown: !input cooldown
   camera: !input camera
@@ -207,18 +168,7 @@ variables:
     {% if day_start <= day_end %}{{ day_start <= t < day_end }}
     {% else %}{{ t >= day_start or t < day_end }}{% endif %}
 
-conditions:
-  # Ereignis-Auslöser nur für Ereignis-Entitäten mit echtem neuen Ereignis
-  - condition: template
-    value_template: >
-      {{ trigger.platform != 'event'
-         or (bell_entity.startswith('event.')
-             and trigger.event.data.new_state is not none
-             and trigger.event.data.old_state is not none
-             and trigger.event.data.new_state.state not in ['unavailable', 'unknown']
-             and trigger.event.data.new_state.state != trigger.event.data.old_state.state) }}
-
-actions:
+sequence:
   - if:
       - condition: template
         value_template: "{{ popup != '' }}"
