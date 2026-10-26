@@ -1,0 +1,397 @@
+blueprint:
+  name: IHA Heizkalender V1
+  description: >
+    Stellt die Heizung je nach Jahreszeit ein. Räume werden in bis zu vier Gruppen
+    eingeteilt, für jede Gruppe gibt es pro Jahreszeit eine Solltemperatur.
+    0 bedeutet aus (Frostschutz). Räume in "Immer aus" bleiben das ganze Jahr aus.
+    Läuft täglich zur eingestellten Uhrzeit und beim Wechsel der Jahreszeit.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/IHA_Heizkalender.yaml
+  input:
+    season_sensor:
+      name: Jahreszeiten-Sensor
+      description: Sensor der Integration "Season" (Zustände spring, summer, autumn, winter)
+      default: sensor.season
+      selector:
+        entity:
+          domain: sensor
+    run_time:
+      name: Uhrzeit
+      default: "23:59:00"
+      selector:
+        time: {}
+    frost_temp:
+      name: Frostschutz-Temperatur
+      description: Wird bei ausgeschalteten Räumen gesetzt (KNX meist mindestens 7 °C)
+      default: 7
+      selector:
+        number:
+          min: 5
+          max: 12
+          step: 0.5
+          unit_of_measurement: °C
+    gruppen:
+      name: Raumgruppen
+      icon: mdi:home-group
+      input:
+        group1:
+          name: Gruppe 1 (z. B. Wohnen/Essen)
+          default: []
+          selector:
+            entity:
+              domain: climate
+              multiple: true
+        group2:
+          name: Gruppe 2 (z. B. Kinder und Bäder)
+          default: []
+          selector:
+            entity:
+              domain: climate
+              multiple: true
+        group3:
+          name: Gruppe 3 (z. B. Ankleide und Büro)
+          default: []
+          selector:
+            entity:
+              domain: climate
+              multiple: true
+        group4:
+          name: Gruppe 4 (z. B. Gäste)
+          default: []
+          selector:
+            entity:
+              domain: climate
+              multiple: true
+        always_off:
+          name: Immer aus
+          description: Räume, die das ganze Jahr nicht geheizt werden
+          default: []
+          selector:
+            entity:
+              domain: climate
+              multiple: true
+    spring:
+      name: Frühling (0 = aus)
+      icon: mdi:flower
+      collapsed: true
+      input:
+        g1_spring:
+          name: Gruppe 1
+          default: 21
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g2_spring:
+          name: Gruppe 2
+          default: 21
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g3_spring:
+          name: Gruppe 3
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g4_spring:
+          name: Gruppe 4
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+    summer:
+      name: Sommer (0 = aus)
+      icon: mdi:white-balance-sunny
+      collapsed: true
+      input:
+        g1_summer:
+          name: Gruppe 1
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g2_summer:
+          name: Gruppe 2
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g3_summer:
+          name: Gruppe 3
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g4_summer:
+          name: Gruppe 4
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+    autumn:
+      name: Herbst (0 = aus)
+      icon: mdi:leaf
+      collapsed: true
+      input:
+        g1_autumn:
+          name: Gruppe 1
+          default: 21
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g2_autumn:
+          name: Gruppe 2
+          default: 21
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g3_autumn:
+          name: Gruppe 3
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g4_autumn:
+          name: Gruppe 4
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+    winter:
+      name: Winter (0 = aus)
+      icon: mdi:snowflake
+      collapsed: true
+      input:
+        g1_winter:
+          name: Gruppe 1
+          default: 22
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g2_winter:
+          name: Gruppe 2
+          default: 20.5
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g3_winter:
+          name: Gruppe 3
+          default: 19
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+        g4_winter:
+          name: Gruppe 4
+          default: 18
+          selector:
+            number:
+              min: 0
+              max: 28
+              step: 0.5
+              unit_of_measurement: °C
+    verschiebung:
+      name: Heizkurve / Parallelverschiebung (optional)
+      icon: mdi:chart-bell-curve
+      collapsed: true
+      input:
+        shift_entity:
+          name: Eingabe für die Parallelverschiebung (optional)
+          default: ""
+          selector:
+            entity:
+              domain: input_number
+        shift_spring:
+          name: Wert Frühling
+          default: 1
+          selector:
+            number:
+              min: -10
+              max: 10
+              step: 0.5
+        shift_summer:
+          name: Wert Sommer
+          default: 0
+          selector:
+            number:
+              min: -10
+              max: 10
+              step: 0.5
+        shift_autumn:
+          name: Wert Herbst
+          default: 1
+          selector:
+            number:
+              min: -10
+              max: 10
+              step: 0.5
+        shift_winter:
+          name: Wert Winter
+          default: 0
+          selector:
+            number:
+              min: -10
+              max: 10
+              step: 0.5
+
+triggers:
+  - trigger: time
+    at: !input run_time
+  - trigger: state
+    entity_id: !input season_sensor
+    not_from: ["unavailable", "unknown"]
+    not_to: ["unavailable", "unknown"]
+
+variables:
+  season_sensor: !input season_sensor
+  season: "{{ states(season_sensor) }}"
+  frost: !input frost_temp
+  always_off: !input always_off
+  shift_entity: !input shift_entity
+  g1_rooms: !input group1
+  g1_temps:
+    - !input g1_spring
+    - !input g1_summer
+    - !input g1_autumn
+    - !input g1_winter
+  g2_rooms: !input group2
+  g2_temps:
+    - !input g2_spring
+    - !input g2_summer
+    - !input g2_autumn
+    - !input g2_winter
+  g3_rooms: !input group3
+  g3_temps:
+    - !input g3_spring
+    - !input g3_summer
+    - !input g3_autumn
+    - !input g3_winter
+  g4_rooms: !input group4
+  g4_temps:
+    - !input g4_spring
+    - !input g4_summer
+    - !input g4_autumn
+    - !input g4_winter
+  shifts:
+    - !input shift_spring
+    - !input shift_summer
+    - !input shift_autumn
+    - !input shift_winter
+  idx: "{{ {'spring': 0, 'summer': 1, 'autumn': 2, 'winter': 3}.get(season, -1) }}"
+  plan_on: >
+    {% set ns = namespace(l=[]) %}
+    {% if idx | int >= 0 %}
+      {% for rooms, temps in [(g1_rooms, g1_temps), (g2_rooms, g2_temps), (g3_rooms, g3_temps), (g4_rooms, g4_temps)] %}
+        {% if rooms | length > 0 and temps[idx | int] | float(0) > 0 %}
+          {% set ns.l = ns.l + [{'rooms': rooms, 'temp': temps[idx | int] | float}] %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {{ ns.l }}
+  plan_off: >
+    {% set ns = namespace(l=always_off) %}
+    {% if idx | int >= 0 %}
+      {% for rooms, temps in [(g1_rooms, g1_temps), (g2_rooms, g2_temps), (g3_rooms, g3_temps), (g4_rooms, g4_temps)] %}
+        {% if rooms | length > 0 and temps[idx | int] | float(0) == 0 %}
+          {% set ns.l = ns.l + rooms %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {{ ns.l | unique | list }}
+
+conditions:
+  - condition: template
+    value_template: "{{ idx | int >= 0 }}"
+
+actions:
+  # 1) Geheizte Gruppen: Heizmodus und Solltemperatur
+  - repeat:
+      for_each: "{{ plan_on }}"
+      sequence:
+        - action: climate.set_hvac_mode
+          continue_on_error: true
+          target:
+            entity_id: "{{ repeat.item.rooms }}"
+          data:
+            hvac_mode: heat
+        - action: climate.set_temperature
+          continue_on_error: true
+          target:
+            entity_id: "{{ repeat.item.rooms }}"
+          data:
+            temperature: "{{ repeat.item.temp }}"
+
+  # 2) Nicht geheizte Räume: aus und Frostschutz
+  - if:
+      - condition: template
+        value_template: "{{ plan_off | length > 0 }}"
+    then:
+      - action: climate.turn_off
+        continue_on_error: true
+        target:
+          entity_id: "{{ plan_off }}"
+      - action: climate.set_temperature
+        continue_on_error: true
+        target:
+          entity_id: "{{ plan_off }}"
+        data:
+          temperature: "{{ frost }}"
+
+  # 3) Optional: Parallelverschiebung der Heizkurve
+  - if:
+      - condition: template
+        value_template: "{{ shift_entity != '' }}"
+    then:
+      - action: input_number.set_value
+        continue_on_error: true
+        target:
+          entity_id: "{{ shift_entity }}"
+        data:
+          value: "{{ shifts[idx | int] }}"
+
+mode: single
