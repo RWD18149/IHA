@@ -1,316 +1,194 @@
 blueprint:
-  name: IHA Beschattung V8.1 26102026
+  name: Bewegungslicht
   description: >
-    Steuerung von Jalousien und Rollläden mit Fenster Priorität, Windalarm, Zeitplan,
-    Sonnenuntergang und Beschattung. Fenster offen und Windalarm haben immer Vorrang.
-    Nachts (Schließzeit bzw. Sonnenuntergang bis Öffnungszeit) wird bei jeder Änderung
-    wieder geschlossen, tagsüber wird geöffnet oder beschattet.
+    Schaltet Lichter bei Bewegung ein und nach Ablauf der Nachlaufzeit aus.
+    Die Ausschalt-Liste kann mehr Lichter enthalten als die Einschalt-Liste.
   domain: automation
-  author: Patric Schneider
-  source_url: https://github.com/RWD18149/IHA/blob/main/Beschattung_V8.yaml
-
+  source_url: https://github.com/RWD18149/IHA/blob/main/Bewegungsmelder_V1.yaml
   input:
-    shutter:
-      name: Jalousie/Rollladen
-      description: Zu steuerndes Cover
+    motion_sensors:
+      name: Bewegungsmelder
       selector:
         entity:
-          domain: cover
-
-    enable_window_function:
-      name: Fensterfunktion aktivieren
-      description: Fensterlogik aktivieren
-      selector:
-        boolean: {}
-      default: false
-
-    fenster:
-      name: Fenster
-      description: Fensterkontakt (optional, nur mit aktivierter Fensterfunktion)
-      default: ""
+          domain: binary_sensor
+          multiple: true
+    lights_on:
+      name: Einschalten
       selector:
         entity:
-          filter:
-            device_class: window
-            domain: binary_sensor
-
-    weekday_open_time:
-      name: Öffnungszeit Werktags
-      selector:
-        time: {}
-      default: "07:30:00"
-
-    weekend_open_time:
-      name: Öffnungszeit Wochenende
-      selector:
-        time: {}
-      default: "09:00:00"
-
-    close_time:
-      name: Schließzeit
-      selector:
-        time: {}
-      default: "18:30:00"
-
-    sunset_time:
-      name: Versatz nach Sonnenuntergang
-      description: Offset nach Sonnenuntergang (z. B. 00:15:00)
-      default: "00:00:00"
-      selector:
-        time: {}
-
-    jalousie_ja:
-      name: Jalousie
-      description: Wenn aktiv, wird zusätzlich die Lamellenneigung gesetzt
-      default: false
-      selector:
-        boolean: {}
-
-    windalarm:
-      name: Windalarm (optional)
-      default: ""
+          domain: light
+          multiple: true
+    lights_off:
+      name: Ausschalten
+      description: Leer lassen, um dieselben Lichter wie beim Einschalten auszuschalten.
+      default: []
       selector:
         entity:
-          filter:
-            domain: input_boolean
-
-    beschattung:
-      name: Beschattung (optional, z. B. Westen)
-      default: ""
-      selector:
-        entity:
-          filter:
-            domain: input_boolean
-
-    position_close:
-      name: Position bei geschlossen
-      default: 30
+          domain: light
+          multiple: true
+    delay_minutes:
+      name: Nachlaufzeit (Minuten)
+      default: 3
       selector:
         number:
-          unit_of_measurement: "%"
-          min: 0
-          max: 100
-
-    position_beschattung:
-      name: Position Beschattung
-      default: 50
+          min: 1
+          max: 60
+          unit_of_measurement: min
+    brightness:
+      name: Helligkeit (0 = Helligkeit nicht setzen)
+      default: 0
       selector:
         number:
-          unit_of_measurement: "%"
           min: 0
           max: 100
-
-    neigung_beschattung:
-      name: Neigung bei Beschattung
-      default: 50
-      selector:
-        number:
           unit_of_measurement: "%"
-          min: 0
-          max: 100
-
-    neigung_geschlossen:
-      name: Neigung bei geschlossen
-      default: 50
-      selector:
-        number:
-          unit_of_measurement: "%"
-          min: 0
-          max: 100
-
-mode: restart
-
-trigger_variables:
-  t_window: !input fenster
-  t_window_enabled: !input enable_window_function
-  t_wind: !input windalarm
-  t_shade: !input beschattung
+    nacht:
+      name: Nachtmodus
+      icon: mdi:weather-night
+      collapsed: true
+      input:
+        night_enabled:
+          name: Nachtmodus aktiv
+          default: false
+          selector:
+            boolean: {}
+        night_start:
+          name: Nacht von
+          default: "23:00:00"
+          selector:
+            time: {}
+        night_end:
+          name: Nacht bis
+          default: "06:00:00"
+          selector:
+            time: {}
+        night_lights:
+          name: Nachtlichter (leer = normale Lichter)
+          default: []
+          selector:
+            entity:
+              domain: light
+              multiple: true
+        night_brightness:
+          name: Nachthelligkeit
+          default: 10
+          selector:
+            number:
+              min: 0
+              max: 100
+              unit_of_measurement: "%"
+        night_delay_minutes:
+          name: Nachlaufzeit Nacht (Minuten)
+          default: 2
+          selector:
+            number:
+              min: 1
+              max: 60
+              unit_of_measurement: min
+    umgebung:
+      name: Helligkeitssensor
+      icon: mdi:brightness-6
+      collapsed: true
+      input:
+        lux_sensor:
+          name: Helligkeitssensor (optional)
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+        lux_threshold:
+          name: Nur einschalten unter
+          default: 50
+          selector:
+            number:
+              min: 0
+              max: 2000
+              unit_of_measurement: lx
+    sperre:
+      name: Sperre
+      icon: mdi:motion-sensor-off
+      collapsed: true
+      input:
+        block_entity:
+          name: Sperre (optional, bei „an“ passiert nichts)
+          default: ""
+          selector:
+            entity:
+              domain:
+                - switch
+                - input_boolean
 
 triggers:
-  - trigger: time
-    at: !input weekday_open_time
-    id: open_weekday
-
-  - trigger: time
-    at: !input weekend_open_time
-    id: open_weekend
-
-  - trigger: time
-    at: !input close_time
-    id: close_time
-
-  - trigger: sun
-    event: sunset
-    offset: !input sunset_time
-    id: close_sunset
-
-  - trigger: template
-    value_template: "{{ t_wind != '' and is_state(t_wind, 'on') }}"
-    id: wind_on
-
-  - trigger: template
-    value_template: "{{ t_wind != '' and is_state(t_wind, 'off') }}"
-    id: wind_off
-
-  - trigger: template
-    value_template: "{{ t_shade != '' and is_state(t_shade, 'on') }}"
-    id: shade_on
-
-  - trigger: template
-    value_template: "{{ t_shade != '' and is_state(t_shade, 'off') }}"
-    id: shade_off
-
-  - trigger: template
-    value_template: "{{ t_window_enabled and t_window != '' and is_state(t_window, 'on') }}"
-    id: window_open
-
-  - trigger: template
-    value_template: "{{ t_window_enabled and t_window != '' and is_state(t_window, 'off') }}"
-    id: window_closed
+  - trigger: state
+    entity_id: !input motion_sensors
+    to: "on"
 
 variables:
-  shutter_entity: !input shutter
-  enable_window: !input enable_window_function
-  window_entity: !input fenster
-  wind_entity: !input windalarm
-  shade_entity: !input beschattung
-  is_jalousie: !input jalousie_ja
-  pos_close: !input position_close
-  pos_shade: !input position_beschattung
-  tilt_shade: !input neigung_beschattung
-  tilt_close: !input neigung_geschlossen
-  weekday_open: !input weekday_open_time
-  weekend_open: !input weekend_open_time
-  close_t: !input close_time
-  window_open_now: "{{ enable_window and window_entity != '' and is_state(window_entity, 'on') }}"
-  wind_on_now: "{{ wind_entity != '' and is_state(wind_entity, 'on') }}"
-  shade_on_now: "{{ shade_entity != '' and is_state(shade_entity, 'on') }}"
+  motion_sensors: !input motion_sensors
+  lights_on_in: !input lights_on
+  lights_off_in: !input lights_off
+  delay_minutes: !input delay_minutes
+  brightness: !input brightness
+  night_enabled: !input night_enabled
+  night_start: !input night_start
+  night_end: !input night_end
+  night_lights_in: !input night_lights
+  night_brightness: !input night_brightness
+  night_delay_minutes: !input night_delay_minutes
+  lux_sensor: !input lux_sensor
+  lux_threshold: !input lux_threshold
+  block_entity: !input block_entity
   is_night: >
-    {% set t = now().strftime('%H:%M:%S') %}
-    {% set open_t = weekday_open if now().weekday() < 5 else weekend_open %}
-    {{ t >= close_t or t < open_t or (is_state('sun.sun', 'below_horizon') and t >= '12:00:00') }}
+    {% if not night_enabled %}false
+    {% else %}
+      {% set n = now().strftime('%H:%M:%S') %}
+      {% if night_start <= night_end %}{{ night_start <= n < night_end }}
+      {% else %}{{ n >= night_start or n < night_end }}{% endif %}
+    {% endif %}
+  target_on: >
+    {{ night_lights_in if (is_night and night_lights_in | length > 0) else lights_on_in }}
+  target_off: >
+    {% set base = lights_off_in if lights_off_in | length > 0 else lights_on_in %}
+    {{ (base + night_lights_in) | unique | list }}
+  bright: "{{ night_brightness if is_night else brightness }}"
+  wait_min: "{{ night_delay_minutes if is_night else delay_minutes }}"
+  any_light_on: "{{ target_off | select('is_state', 'on') | list | length > 0 }}"
+  too_bright: >
+    {% if lux_sensor %}{{ states(lux_sensor) | float(0) > lux_threshold | float(0) }}
+    {% else %}false{% endif %}
 
-conditions: []
+conditions:
+  - condition: template
+    value_template: "{{ not block_entity or not is_state(block_entity, 'on') }}"
 
 actions:
-  # 1) Fenster offen hat immer Vorrang: hoch und oben bleiben
-  - choose:
-      - conditions:
+  - condition: template
+    value_template: "{{ not too_bright or any_light_on }}"
+  - variables:
+      to_switch_on: "{{ target_on | reject('is_state', 'on') | list }}"
+  - if:
+      - condition: template
+        value_template: "{{ to_switch_on | length > 0 }}"
+    then:
+      - if:
           - condition: template
-            value_template: "{{ window_open_now }}"
-        sequence:
-          - action: cover.open_cover
+            value_template: "{{ bright | int(0) > 0 }}"
+        then:
+          - action: light.turn_on
             target:
-              entity_id: "{{ shutter_entity }}"
-          - stop: "Fenster offen, Cover bleibt oben"
-
-  # 2) Windalarm hat Vorrang: hoch
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ wind_on_now }}"
-        sequence:
-          - action: cover.open_cover
-            target:
-              entity_id: "{{ shutter_entity }}"
-          - stop: "Windalarm aktiv, Cover hoch"
-
-  # 3) Nachtzustand: zur Schließzeit, bei Sonnenuntergang oder bei jeder Änderung in der Nacht
-  - choose:
-      - conditions:
-          - condition: or
-            conditions:
-              - condition: trigger
-                id:
-                  - close_time
-                  - close_sunset
-              - condition: and
-                conditions:
-                  - condition: trigger
-                    id:
-                      - window_closed
-                      - wind_off
-                      - shade_on
-                      - shade_off
-                  - condition: template
-                    value_template: "{{ is_night }}"
-        sequence:
-          - action: cover.set_cover_position
+              entity_id: "{{ to_switch_on }}"
             data:
-              position: "{{ pos_close }}"
+              brightness_pct: "{{ bright | int }}"
+        else:
+          - action: light.turn_on
             target:
-              entity_id: "{{ shutter_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ is_jalousie }}"
-            then:
-              - delay: "00:30:00"
-              - action: cover.set_cover_tilt_position
-                data:
-                  tilt_position: "{{ tilt_close }}"
-                target:
-                  entity_id: "{{ shutter_entity }}"
-          - stop: "Nachtzustand gesetzt"
+              entity_id: "{{ to_switch_on }}"
+  - wait_template: "{{ motion_sensors | select('is_state', 'on') | list | length == 0 }}"
+  - delay:
+      minutes: "{{ wait_min | int }}"
+  - action: light.turn_off
+    target:
+      entity_id: "{{ target_off }}"
 
-  # 4) Tagsüber Beschattung, wenn aktiv (auch direkt zur Öffnungszeit)
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ shade_on_now and not is_night }}"
-        sequence:
-          - action: cover.set_cover_position
-            data:
-              position: "{{ pos_shade }}"
-            target:
-              entity_id: "{{ shutter_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ is_jalousie }}"
-            then:
-              - action: cover.set_cover_tilt_position
-                data:
-                  tilt_position: "{{ tilt_shade }}"
-                target:
-                  entity_id: "{{ shutter_entity }}"
-          - stop: "Beschattung gesetzt"
-
-  # 5) Morgens öffnen
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: open_weekday
-          - condition: time
-            weekday: [mon, tue, wed, thu, fri]
-        sequence:
-          - action: cover.open_cover
-            target:
-              entity_id: "{{ shutter_entity }}"
-          - stop: "Werktags geöffnet"
-      - conditions:
-          - condition: trigger
-            id: open_weekend
-          - condition: time
-            weekday: [sat, sun]
-        sequence:
-          - action: cover.open_cover
-            target:
-              entity_id: "{{ shutter_entity }}"
-          - stop: "Wochenende geöffnet"
-
-  # 6) Tagsüber neu bewerten: ohne Beschattung ist der Zielzustand offen
-  - choose:
-      - conditions:
-          - condition: trigger
-            id:
-              - window_closed
-              - wind_off
-              - shade_off
-          - condition: template
-            value_template: "{{ not is_night }}"
-        sequence:
-          - action: cover.open_cover
-            target:
-              entity_id: "{{ shutter_entity }}"
-          - stop: "Tageszustand, offen"
-
-  - stop: "Keine passende Aktion"
+mode: restart
+max_exceeded: silent
