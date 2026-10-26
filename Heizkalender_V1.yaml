@@ -7,7 +7,7 @@ blueprint:
     Läuft täglich zur eingestellten Uhrzeit und beim Wechsel der Jahreszeit.
   domain: automation
   author: Patric Schneider
-  source_url: https://github.com/RWD18149/IHA/blob/main/IHA_Heizkalender.yaml
+  source_url: https://github.com/RWD18149/IHA/blob/main/Heizkalender_V1.yaml
   input:
     season_sensor:
       name: Jahreszeiten-Sensor
