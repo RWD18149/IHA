@@ -1,0 +1,236 @@
+blueprint:
+  name: IHA Rauchmelder-Alarm V1
+  description: >
+    Reagiert auf jeden einzelnen Rauchmelder und meldet, in welchem Raum es brennt.
+    Optional: kritische Push-Nachricht (durchbricht Lautlos und Fokus), Durchsage,
+    Sirene, alle Lichter an, Rollläden und Jalousien hoch (Fluchtweg und Feuerwehr),
+    Lüftung und weitere Geräte aus. Bei Entwarnung folgt eine Meldung und die Sirene
+    geht wieder aus. Alle Funktionen sind nur aktiv, wenn das Feld ausgefüllt ist.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/Rauchmelder_V1.yaml
+  input:
+    smoke_sensors:
+      name: Rauchmelder
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    benachrichtigung:
+      name: Benachrichtigung
+      icon: mdi:cellphone-message
+      input:
+        notify_actions:
+          name: Benachrichtigungs-Aktionen
+          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric
+          default: []
+          selector:
+            text:
+              multiple: true
+        critical:
+          name: Kritische Benachrichtigung
+          description: Klingelt auch bei Lautlos und Fokus (iPhone und Android)
+          default: true
+          selector:
+            boolean: {}
+        notify_clear:
+          name: Entwarnung melden
+          default: true
+          selector:
+            boolean: {}
+    durchsage:
+      name: Durchsage (optional)
+      icon: mdi:bullhorn
+      collapsed: true
+      input:
+        announce_entities:
+          name: Lautsprecher für Durchsagen
+          description: Benachrichtigungs-Entitäten, z. B. die Durchsage-Entitäten von Alexa-Geräten
+          default: []
+          selector:
+            entity:
+              domain: notify
+              multiple: true
+        announce_repeat:
+          name: Durchsage wiederholen
+          default: 3
+          selector:
+            number:
+              min: 1
+              max: 10
+    haus:
+      name: Haus (optional)
+      icon: mdi:home-alert
+      collapsed: true
+      input:
+        sirens:
+          name: Sirenen
+          default: []
+          selector:
+            entity:
+              domain:
+                - siren
+                - switch
+              multiple: true
+        lights:
+          name: Lichter auf 100 % einschalten
+          default: []
+          selector:
+            entity:
+              domain: light
+              multiple: true
+        covers:
+          name: Rollläden und Jalousien öffnen
+          default: []
+          selector:
+            entity:
+              domain: cover
+              multiple: true
+        turn_off:
+          name: Ausschalten (Lüftung, Klimaanlage, Steckdosen usw.)
+          default: []
+          selector:
+            entity:
+              domain:
+                - switch
+                - fan
+                - climate
+                - humidifier
+                - light
+              multiple: true
+
+triggers:
+  - trigger: state
+    entity_id: !input smoke_sensors
+    to: "on"
+    from: "off"
+    id: alarm
+  - trigger: state
+    entity_id: !input smoke_sensors
+    to: "off"
+    from: "on"
+    id: clear
+
+variables:
+  sensors: !input smoke_sensors
+  notify_list: !input notify_actions
+  critical: !input critical
+  notify_clear: !input notify_clear
+  announce: !input announce_entities
+  announce_repeat: !input announce_repeat
+  sirens: !input sirens
+  lights: !input lights
+  covers: !input covers
+  turn_off: !input turn_off
+  room: >
+    {{ area_name(trigger.entity_id) or state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
+  active: "{{ sensors | select('is_state', 'on') | list }}"
+  active_rooms: >
+    {{ active | map('area_name') | reject('none') | unique | list | join(', ') }}
+  push_data: >
+    {% if critical %}
+      {{ {'push': {'sound': {'name': 'default', 'critical': 1, 'volume': 1.0}},
+          'ttl': 0, 'priority': 'high', 'channel': 'alarm_stream'} }}
+    {% else %}
+      {{ {} }}
+    {% endif %}
+
+conditions: []
+
+actions:
+  - choose:
+      # Alarm
+      - conditions:
+          - condition: trigger
+            id: alarm
+        sequence:
+          - parallel:
+              - repeat:
+                  for_each: "{{ notify_list }}"
+                  sequence:
+                    - action: "{{ repeat.item }}"
+                      continue_on_error: true
+                      data:
+                        title: "🔥 RAUCHMELDER"
+                        message: "Alarm: {{ room }}. Bitte sofort prüfen!"
+                        data: "{{ push_data }}"
+              - if:
+                  - condition: template
+                    value_template: "{{ sirens | length > 0 }}"
+                then:
+                  - action: homeassistant.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ sirens }}"
+              - if:
+                  - condition: template
+                    value_template: "{{ lights | length > 0 }}"
+                then:
+                  - action: light.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ lights }}"
+                    data:
+                      brightness_pct: 100
+              - if:
+                  - condition: template
+                    value_template: "{{ covers | length > 0 }}"
+                then:
+                  - action: cover.open_cover
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ covers }}"
+              - if:
+                  - condition: template
+                    value_template: "{{ turn_off | length > 0 }}"
+                then:
+                  - action: homeassistant.turn_off
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ turn_off }}"
+              - if:
+                  - condition: template
+                    value_template: "{{ announce | length > 0 }}"
+                then:
+                  - repeat:
+                      count: "{{ announce_repeat | int }}"
+                      sequence:
+                        - action: notify.send_message
+                          continue_on_error: true
+                          target:
+                            entity_id: "{{ announce }}"
+                          data:
+                            message: "Achtung! Rauchmelder {{ room }} hat ausgelöst. Bitte das Haus verlassen."
+                        - delay:
+                            seconds: 15
+
+      # Entwarnung, wenn kein Melder mehr Rauch meldet
+      - conditions:
+          - condition: trigger
+            id: clear
+          - condition: template
+            value_template: "{{ active | length == 0 }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ sirens | length > 0 }}"
+            then:
+              - action: homeassistant.turn_off
+                continue_on_error: true
+                target:
+                  entity_id: "{{ sirens }}"
+          - if:
+              - condition: template
+                value_template: "{{ notify_clear }}"
+            then:
+              - repeat:
+                  for_each: "{{ notify_list }}"
+                  sequence:
+                    - action: "{{ repeat.item }}"
+                      continue_on_error: true
+                      data:
+                        title: Rauchmelder
+                        message: "Entwarnung: Alle Rauchmelder melden keinen Rauch mehr."
+
+mode: parallel
+max: 20
