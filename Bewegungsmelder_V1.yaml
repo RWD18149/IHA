@@ -4,7 +4,7 @@ blueprint:
     Schaltet Lichter bei Bewegung ein und nach Ablauf der Nachlaufzeit aus.
     Die Ausschalt-Liste kann mehr Lichter enthalten als die Einschalt-Liste.
   domain: automation
-  source_url:   source_url: https://github.com/RWD18149/IHA/blob/main/bewegungslicht_V1.yaml
+    source_url: https://github.com/RWD18149/IHA/blob/main/Bewegungsmelder_V1.yaml
   input:
     motion_sensors:
       name: Bewegungsmelder
