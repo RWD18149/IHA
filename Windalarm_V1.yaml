@@ -1,0 +1,208 @@
+blueprint:
+  name: IHA Windalarm V1
+  description: >
+    Setzt bei starkem Wind einen Windalarm (Hilfsschalter) und nimmt ihn erst wieder
+    zurück, wenn der Wind eine einstellbare Zeit lang unter der Entwarnungsschwelle lag.
+    Optional eine zweite Stufe, z. B. für Rollläden, die mehr Wind vertragen als Jalousien.
+    Die Schwellen gelten in der Einheit des Windsensors (km/h oder m/s).
+    Die Hilfsschalter werden im Beschattungs-Blueprint als Windalarm eingetragen.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/Windalarm_V1.yaml
+  input:
+    wind_sensor:
+      name: Windsensor
+      selector:
+        entity:
+          domain: sensor
+    release_minutes:
+      name: Entwarnung erst nach (Minuten unter der Schwelle)
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: min
+    stufe1:
+      name: Stufe 1 (z. B. Jalousien)
+      icon: mdi:blinds-horizontal
+      input:
+        flag1:
+          name: Hilfsschalter Windalarm
+          selector:
+            entity:
+              domain: input_boolean
+        on1:
+          name: Alarm ab
+          default: 18
+          selector:
+            number:
+              min: 1
+              max: 150
+              step: 0.5
+        off1:
+          name: Entwarnung unter
+          default: 12
+          selector:
+            number:
+              min: 0
+              max: 150
+              step: 0.5
+    stufe2:
+      name: Stufe 2 (optional, z. B. Rollläden)
+      icon: mdi:window-shutter
+      collapsed: true
+      input:
+        flag2:
+          name: Hilfsschalter Windalarm (optional)
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+        on2:
+          name: Alarm ab
+          default: 30
+          selector:
+            number:
+              min: 1
+              max: 150
+              step: 0.5
+        off2:
+          name: Entwarnung unter
+          default: 20
+          selector:
+            number:
+              min: 0
+              max: 150
+              step: 0.5
+    benachrichtigung:
+      name: Benachrichtigung (optional)
+      icon: mdi:cellphone-message
+      collapsed: true
+      input:
+        notify_actions:
+          name: Benachrichtigungs-Aktionen
+          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric
+          default: []
+          selector:
+            text:
+              multiple: true
+        notify_release:
+          name: Auch Entwarnung melden
+          default: false
+          selector:
+            boolean: {}
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input wind_sensor
+    above: !input on1
+    id: on1
+  - trigger: numeric_state
+    entity_id: !input wind_sensor
+    below: !input off1
+    for:
+      minutes: !input release_minutes
+    id: off1
+  - trigger: numeric_state
+    entity_id: !input wind_sensor
+    above: !input on2
+    id: on2
+  - trigger: numeric_state
+    entity_id: !input wind_sensor
+    below: !input off2
+    for:
+      minutes: !input release_minutes
+    id: off2
+  - trigger: homeassistant
+    event: start
+    id: start
+
+variables:
+  wind_sensor: !input wind_sensor
+  release_minutes: !input release_minutes
+  flag1: !input flag1
+  flag2: !input flag2
+  on1: !input on1
+  off1: !input off1
+  on2: !input on2
+  off2: !input off2
+  notify_list: !input notify_actions
+  notify_release: !input notify_release
+  unit: "{{ state_attr(wind_sensor, 'unit_of_measurement') or '' }}"
+
+conditions: []
+
+actions:
+  # Nach einem Neustart Wartezeit abwarten, damit eine Entwarnung nicht zu früh kommt
+  - if:
+      - condition: trigger
+        id: start
+    then:
+      - delay:
+          minutes: "{{ release_minutes | int }}"
+
+  - variables:
+      wind: "{{ states(wind_sensor) | float(-1) }}"
+      stages: >
+        {% set l = [{'flag': flag1, 'on': on1 | float, 'off': off1 | float, 'name': 'Stufe 1', 't_on': 'on1', 't_off': 'off1'}] %}
+        {% if flag2 != '' %}
+          {% set l = l + [{'flag': flag2, 'on': on2 | float, 'off': off2 | float, 'name': 'Stufe 2', 't_on': 'on2', 't_off': 'off2'}] %}
+        {% endif %}
+        {{ l }}
+
+  - condition: template
+    value_template: "{{ wind >= 0 }}"
+
+  - repeat:
+      for_each: "{{ stages }}"
+      sequence:
+        # Alarm setzen
+        - if:
+            - condition: template
+              value_template: >
+                {{ trigger.id in [repeat.item.t_on, 'start']
+                   and wind > repeat.item.on
+                   and is_state(repeat.item.flag, 'off') }}
+          then:
+            - variables:
+                label: "{{ state_attr(repeat.item.flag, 'friendly_name') or repeat.item.name }}"
+            - action: input_boolean.turn_on
+              target:
+                entity_id: "{{ repeat.item.flag }}"
+            - repeat:
+                for_each: "{{ notify_list }}"
+                sequence:
+                  - action: "{{ repeat.item }}"
+                    continue_on_error: true
+                    data:
+                      title: Windalarm
+                      message: "{{ label }} ausgelöst ({{ wind | round(1) }} {{ unit }})"
+        # Entwarnung
+        - if:
+            - condition: template
+              value_template: >
+                {{ trigger.id in [repeat.item.t_off, 'start']
+                   and wind < repeat.item.off
+                   and is_state(repeat.item.flag, 'on') }}
+          then:
+            - variables:
+                label: "{{ state_attr(repeat.item.flag, 'friendly_name') or repeat.item.name }}"
+            - action: input_boolean.turn_off
+              target:
+                entity_id: "{{ repeat.item.flag }}"
+            - if:
+                - condition: template
+                  value_template: "{{ notify_release }}"
+              then:
+                - repeat:
+                    for_each: "{{ notify_list }}"
+                    sequence:
+                      - action: "{{ repeat.item }}"
+                        continue_on_error: true
+                        data:
+                          title: Windalarm
+                          message: "{{ label }} aufgehoben ({{ wind | round(1) }} {{ unit }})"
+
+mode: parallel
+max: 10
