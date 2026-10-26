@@ -1,0 +1,327 @@
+blueprint:
+  name: IHA Türklingel V1
+  description: >
+    Reagiert auf die Türklingel per Webhook und/oder Klingel-Entität. Macht ein Kamerabild,
+    lässt tagsüber Alexa-Geräte klingeln, lässt nachts stattdessen Lichter blinken und
+    schickt eine Benachrichtigung mit Bild. Mehrfaches Klingeln innerhalb der Sperrzeit
+    wird ignoriert.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/Tuerklingel_V1.yaml
+  input:
+    ausloeser:
+      name: Auslöser
+      icon: mdi:doorbell
+      input:
+        webhook_id:
+          name: Webhook-ID
+          description: Eindeutige, schwer zu erratende ID, die die Klingel aufruft. Nicht veröffentlichen.
+          default: iha_tuerklingel_bitte_aendern
+          selector:
+            text: {}
+        webhook_local_only:
+          name: Webhook nur im Heimnetz erlauben
+          description: Empfohlen, wenn die Klingel im selben Netzwerk hängt
+          default: true
+          selector:
+            boolean: {}
+        bell_entity:
+          name: Klingel-Entität (optional)
+          description: Binärsensor oder Ereignis-Entität der Klingel, falls vorhanden
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - event
+        popup_boolean:
+          name: Hilfsschalter für das Dashboard-Popup (optional)
+          description: Wird für 30 Sekunden eingeschaltet
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+        cooldown:
+          name: Sperrzeit nach dem Klingeln (Sekunden)
+          default: 30
+          selector:
+            number:
+              min: 0
+              max: 300
+              unit_of_measurement: s
+    kamera:
+      name: Kamera
+      icon: mdi:cctv
+      collapsed: true
+      input:
+        camera:
+          name: Kamera (optional)
+          default: ""
+          selector:
+            entity:
+              domain: camera
+    tag:
+      name: Tagsüber klingeln
+      icon: mdi:bell-ring
+      collapsed: true
+      input:
+        day_start:
+          name: Tag von
+          default: "06:00:00"
+          selector:
+            time: {}
+        day_end:
+          name: Tag bis
+          default: "20:00:00"
+          selector:
+            time: {}
+        alexa_devices:
+          name: Alexa-Geräte
+          default: []
+          selector:
+            device:
+              integration: alexa_devices
+              multiple: true
+        alexa_sound:
+          name: Klingelton
+          default: amzn_sfx_doorbell_chime_02
+          selector:
+            text: {}
+        volume_players:
+          name: Lautstärke setzen für (optional)
+          default: []
+          selector:
+            entity:
+              domain: media_player
+              multiple: true
+        volume_level:
+          name: Lautstärke
+          default: 0.9
+          selector:
+            number:
+              min: 0.1
+              max: 1
+              step: 0.05
+    nacht:
+      name: Nachts Lichter blinken
+      icon: mdi:lightbulb-on
+      collapsed: true
+      input:
+        flash_lights:
+          name: Lichter
+          default: []
+          selector:
+            entity:
+              domain: light
+              multiple: true
+        flash_count:
+          name: Anzahl Blinken
+          default: 2
+          selector:
+            number:
+              min: 1
+              max: 5
+        flash_seconds:
+          name: Dauer an und aus (Sekunden)
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 10
+              unit_of_measurement: s
+        flash_also_day:
+          name: Auch tagsüber blinken
+          default: false
+          selector:
+            boolean: {}
+    benachrichtigung:
+      name: Benachrichtigung
+      icon: mdi:cellphone-message
+      collapsed: true
+      input:
+        notify_actions:
+          name: Benachrichtigungs-Aktionen
+          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric oder notify.smtp
+          default: []
+          selector:
+            text:
+              multiple: true
+        notify_title:
+          name: Titel
+          default: Türklingel
+          selector:
+            text: {}
+        notify_message:
+          name: Nachricht
+          default: Es klingelt an der Haustür
+          selector:
+            text: {}
+        notify_url:
+          name: Dashboard beim Antippen öffnen (optional)
+          description: z. B. /lovelace/0#pop-up-name
+          default: ""
+          selector:
+            text: {}
+
+trigger_variables:
+  t_bell: !input bell_entity
+
+triggers:
+  - trigger: webhook
+    webhook_id: !input webhook_id
+    allowed_methods:
+      - GET
+      - POST
+    local_only: !input webhook_local_only
+  - trigger: template
+    value_template: >
+      {{ t_bell != '' and t_bell.startswith('binary_sensor.') and is_state(t_bell, 'on') }}
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input bell_entity
+
+variables:
+  bell_entity: !input bell_entity
+  popup: !input popup_boolean
+  cooldown: !input cooldown
+  camera: !input camera
+  day_start: !input day_start
+  day_end: !input day_end
+  alexa: !input alexa_devices
+  sound: !input alexa_sound
+  vol_players: !input volume_players
+  vol: !input volume_level
+  flash: !input flash_lights
+  flash_count: !input flash_count
+  flash_s: !input flash_seconds
+  flash_day: !input flash_also_day
+  notify_list: !input notify_actions
+  n_title: !input notify_title
+  n_message: !input notify_message
+  n_url: !input notify_url
+  snap_file: /media/tuerklingel.jpg
+  snap_url: "/media/local/tuerklingel.jpg?v={{ as_timestamp(now()) | int }}"
+  is_day: >
+    {% set t = now().strftime('%H:%M:%S') %}
+    {% if day_start <= day_end %}{{ day_start <= t < day_end }}
+    {% else %}{{ t >= day_start or t < day_end }}{% endif %}
+
+conditions:
+  # Ereignis-Auslöser nur für Ereignis-Entitäten mit echtem neuen Ereignis
+  - condition: template
+    value_template: >
+      {{ trigger.platform != 'event'
+         or (bell_entity.startswith('event.')
+             and trigger.event.data.new_state is not none
+             and trigger.event.data.old_state is not none
+             and trigger.event.data.new_state.state not in ['unavailable', 'unknown']
+             and trigger.event.data.new_state.state != trigger.event.data.old_state.state) }}
+
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ popup != '' }}"
+    then:
+      - action: input_boolean.turn_on
+        continue_on_error: true
+        target:
+          entity_id: "{{ popup }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ camera != '' }}"
+    then:
+      - action: camera.snapshot
+        continue_on_error: true
+        target:
+          entity_id: "{{ camera }}"
+        data:
+          filename: "{{ snap_file }}"
+
+  - parallel:
+      # Benachrichtigungen
+      - repeat:
+          for_each: "{{ notify_list }}"
+          sequence:
+            - action: "{{ repeat.item }}"
+              continue_on_error: true
+              data:
+                title: "{{ n_title }}"
+                message: "{{ n_message }} ({{ now().strftime('%H:%M') }} Uhr)"
+                data: >
+                  {% set d = {} %}
+                  {% if camera != '' %}{% set d = dict(d, image=snap_url, images=[snap_file]) %}{% endif %}
+                  {% if n_url != '' %}{% set d = dict(d, url=n_url) %}{% endif %}
+                  {{ d }}
+
+      # Tagsüber: Alexa klingeln lassen
+      - if:
+          - condition: template
+            value_template: "{{ is_day and alexa | length > 0 }}"
+        then:
+          - if:
+              - condition: template
+                value_template: "{{ vol_players | length > 0 }}"
+            then:
+              - action: media_player.volume_set
+                continue_on_error: true
+                target:
+                  entity_id: "{{ vol_players }}"
+                data:
+                  volume_level: "{{ vol }}"
+          - repeat:
+              for_each: "{{ alexa }}"
+              sequence:
+                - action: alexa_devices.send_sound
+                  continue_on_error: true
+                  data:
+                    sound: "{{ sound }}"
+                    device_id: "{{ repeat.item }}"
+
+      # Nachts (oder auf Wunsch immer): Lichter blinken und danach wiederherstellen
+      - if:
+          - condition: template
+            value_template: "{{ flash | length > 0 and (not is_day or flash_day) }}"
+        then:
+          - action: scene.create
+            data:
+              scene_id: iha_tuerklingel_licht
+              snapshot_entities: "{{ flash }}"
+          - repeat:
+              count: "{{ flash_count | int }}"
+              sequence:
+                - action: light.turn_on
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ flash }}"
+                - delay:
+                    seconds: "{{ flash_s | int }}"
+                - action: light.turn_off
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ flash }}"
+                - delay:
+                    seconds: "{{ flash_s | int }}"
+          - action: scene.turn_on
+            target:
+              entity_id: scene.iha_tuerklingel_licht
+          - action: scene.delete
+            continue_on_error: true
+            target:
+              entity_id: scene.iha_tuerklingel_licht
+
+  - delay:
+      seconds: "{{ [cooldown | int, 30 if popup != '' else 0] | max }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ popup != '' }}"
+    then:
+      - action: input_boolean.turn_off
+        continue_on_error: true
+        target:
+          entity_id: "{{ popup }}"
+
+mode: single
+max_exceeded: silent
