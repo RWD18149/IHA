@@ -1,5 +1,5 @@
 blueprint:
-  name: IHA Türklingel V2
+  name: IHA Türklingel V2.2
   description: >
     Skript für die Türklingel. Wird von einer beliebigen Automation gestartet
     (Webhook, Klingel-Entität, KNX-Taster usw.). Macht ein Kamerabild, lässt tagsüber
@@ -143,6 +143,7 @@ blueprint:
           selector:
             text: {}
 
+
 variables:
   popup: !input popup_boolean
   cooldown: !input cooldown
@@ -161,8 +162,10 @@ variables:
   n_title: !input notify_title
   n_message: !input notify_message
   n_url: !input notify_url
-  snap_file: /media/tuerklingel.jpg
-  snap_url: "/media/local/tuerklingel.jpg?v={{ as_timestamp(now()) | int }}"
+  # 60 wechselnde Dateinamen, damit das iPhone kein altes Bild aus dem Zwischenspeicher zeigt
+  snap_name: "tuerklingel_{{ now().strftime('%S') }}.jpg"
+  snap_file: "/media/{{ snap_name }}"
+  snap_url: "/media/local/{{ snap_name }}"
   is_day: >
     {% set t = now().strftime('%H:%M:%S') %}
     {% if day_start <= day_end %}{{ day_start <= t < day_end }}
