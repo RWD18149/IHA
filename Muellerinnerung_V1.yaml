@@ -1,10 +1,11 @@
 blueprint:
   name: IHA Müllerinnerung V1
   description: >
-    Erinnert am Vorabend der Abholung per Push daran, die Tonne rauszustellen,
+    Erinnert am Vorabend der Abholung per Push daran, den Müll rauszustellen,
     optional zusätzlich am Morgen des Abholtags.
     Grundlage ist der Template-Sensor sensor.abfall_in_tagen aus der IHA Einrichtung
     (Zustand z. B. "Morgen - Restmüll" oder "Heute - Biomüll").
+    In den Texten wird {art} durch die Müllart ersetzt.
   domain: automation
   author: Patric Schneider
   source_url: https://github.com/RWD18149/IHA/blob/main/Muellerinnerung_V1.yaml
@@ -16,11 +17,21 @@ blueprint:
       selector:
         entity:
           domain: sensor
-    zeit_vorabend:
-      name: Erinnerung am Vorabend um
-      default: "18:00:00"
-      selector:
-        time: {}
+    vorabend:
+      name: Erinnerung am Vorabend
+      icon: mdi:delete-clock
+      input:
+        zeit_vorabend:
+          name: Uhrzeit
+          default: "18:00:00"
+          selector:
+            time: {}
+        text_vorabend:
+          name: Text
+          description: "{art} wird durch die Müllart ersetzt."
+          default: "Morgen wird {art} abgeholt. Bitte stellen Sie den Müll heute Abend raus."
+          selector:
+            text: {}
     morgens:
       name: Erinnerung am Abholtag (optional)
       icon: mdi:weather-sunset-up
@@ -32,17 +43,31 @@ blueprint:
           selector:
             boolean: {}
         zeit_morgens:
-          name: Erinnerung am Morgen um
+          name: Uhrzeit
           default: "06:30:00"
           selector:
             time: {}
+        text_morgens:
+          name: Text
+          description: "{art} wird durch die Müllart ersetzt."
+          default: "Heute wird {art} abgeholt. Bitte stellen Sie den Müll raus, falls noch nicht geschehen."
+          selector:
+            text: {}
     benachrichtigung:
       name: Benachrichtigung
       icon: mdi:cellphone-message
       input:
+        geraete:
+          name: Handys
+          description: Handys mit der Home-Assistant-App, die die Erinnerung bekommen.
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
         notify_actions:
-          name: Benachrichtigungs-Aktionen
-          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric
+          name: Weitere Benachrichtigungs-Aktionen (optional)
+          description: Eine pro Zeile, z. B. für Alexa oder eine Gruppe. Für Handys reicht die Auswahl oben.
           default: []
           selector:
             text:
@@ -64,18 +89,27 @@ triggers:
 variables:
   abfall_sensor: !input abfall_sensor
   morgens_aktiv: !input morgens_aktiv
-  notify_list: !input notify_actions
+  text_vorabend: !input text_vorabend
+  text_morgens: !input text_morgens
+  geraete: !input geraete
+  notify_extra: !input notify_actions
   titel: !input titel
   zustand: "{{ states(abfall_sensor) }}"
   art: >
     {% if ' - ' in zustand %}{{ zustand.split(' - ', 1)[1] | trim }}{% else %}Müll{% endif %}
   nachricht: >
     {% if trigger.id == 'vorabend' and zustand.startswith('Morgen') %}
-      Morgen wird {{ art }} abgeholt. Bitte heute Abend rausstellen.
+      {{ text_vorabend | replace('{art}', art) }}
     {% elif trigger.id == 'morgens' and morgens_aktiv and zustand.startswith('Heute') %}
-      Heute wird {{ art }} abgeholt. Ist die Tonne draußen?
-    {% else %}
+      {{ text_morgens | replace('{art}', art) }}
     {% endif %}
+  notify_list: >
+    {% set ns = namespace(l=[]) %}
+    {% for d in geraete %}
+      {% set n = device_attr(d, 'name') %}
+      {% if n %}{% set ns.l = ns.l + ['notify.mobile_app_' ~ (n | slugify)] %}{% endif %}
+    {% endfor %}
+    {{ ns.l + (notify_extra | list) }}
 
 conditions:
   - condition: template
