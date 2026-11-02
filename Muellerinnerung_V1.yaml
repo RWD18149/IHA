@@ -1,0 +1,94 @@
+blueprint:
+  name: IHA Müllerinnerung V1
+  description: >
+    Erinnert am Vorabend der Abholung per Push daran, die Tonne rauszustellen,
+    optional zusätzlich am Morgen des Abholtags.
+    Grundlage ist der Template-Sensor sensor.abfall_in_tagen aus der IHA Einrichtung
+    (Zustand z. B. "Morgen - Restmüll" oder "Heute - Biomüll").
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/Muellerinnerung_V1.yaml
+  input:
+    abfall_sensor:
+      name: Abfallsensor
+      description: Template-Sensor aus der IHA Einrichtung.
+      default: sensor.abfall_in_tagen
+      selector:
+        entity:
+          domain: sensor
+    zeit_vorabend:
+      name: Erinnerung am Vorabend um
+      default: "18:00:00"
+      selector:
+        time: {}
+    morgens:
+      name: Erinnerung am Abholtag (optional)
+      icon: mdi:weather-sunset-up
+      collapsed: true
+      input:
+        morgens_aktiv:
+          name: Auch am Morgen des Abholtags erinnern
+          default: false
+          selector:
+            boolean: {}
+        zeit_morgens:
+          name: Erinnerung am Morgen um
+          default: "06:30:00"
+          selector:
+            time: {}
+    benachrichtigung:
+      name: Benachrichtigung
+      icon: mdi:cellphone-message
+      input:
+        notify_actions:
+          name: Benachrichtigungs-Aktionen
+          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric
+          default: []
+          selector:
+            text:
+              multiple: true
+        titel:
+          name: Titel
+          default: Müll
+          selector:
+            text: {}
+
+triggers:
+  - trigger: time
+    at: !input zeit_vorabend
+    id: vorabend
+  - trigger: time
+    at: !input zeit_morgens
+    id: morgens
+
+variables:
+  abfall_sensor: !input abfall_sensor
+  morgens_aktiv: !input morgens_aktiv
+  notify_list: !input notify_actions
+  titel: !input titel
+  zustand: "{{ states(abfall_sensor) }}"
+  art: >
+    {% if ' - ' in zustand %}{{ zustand.split(' - ', 1)[1] | trim }}{% else %}Müll{% endif %}
+  nachricht: >
+    {% if trigger.id == 'vorabend' and zustand.startswith('Morgen') %}
+      Morgen wird {{ art }} abgeholt. Bitte heute Abend rausstellen.
+    {% elif trigger.id == 'morgens' and morgens_aktiv and zustand.startswith('Heute') %}
+      Heute wird {{ art }} abgeholt. Ist die Tonne draußen?
+    {% else %}
+    {% endif %}
+
+conditions:
+  - condition: template
+    value_template: "{{ nachricht | trim != '' }}"
+
+actions:
+  - repeat:
+      for_each: "{{ notify_list }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: "{{ titel }}"
+            message: "{{ nachricht | trim }}"
+
+mode: single
