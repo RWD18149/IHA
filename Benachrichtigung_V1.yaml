@@ -1,0 +1,248 @@
+blueprint:
+  name: IHA Benachrichtigung V1
+  description: >
+    Alle Push-Nachrichten an einer Stelle. Pro Bereich wählst du die Handys aus, die
+    benachrichtigt werden. Aktuell: Müll (Vorabend und optional Abholtag), Türklingel
+    (mit Kamerabild) und Rauchmelder (kritisch, klingelt auch bei Lautlos und Fokus).
+    Ein Bereich ist nur aktiv, wenn dort mindestens ein Handy ausgewählt ist.
+    In den Blueprints Türklingel und Rauchmelder die eigenen Benachrichtigungen dann leer lassen.
+  domain: automation
+  author: Patric Schneider
+  source_url: https://github.com/RWD18149/IHA/blob/main/Benachrichtigung_V1.yaml
+  input:
+    muell:
+      name: Müll
+      icon: mdi:delete-clock
+      collapsed: true
+      input:
+        geraete_muell:
+          name: Handys
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+        abfall_sensor:
+          name: Abfallsensor
+          description: Template-Sensor aus der IHA Einrichtung (Zustand z. B. "Morgen - Restmüll").
+          default: sensor.abfall_in_tagen
+          selector:
+            entity:
+              domain: sensor
+        zeit_vorabend:
+          name: Erinnerung am Vorabend um
+          default: "18:00:00"
+          selector:
+            time: {}
+        text_vorabend:
+          name: Text am Vorabend
+          description: "{art} wird durch die Müllart ersetzt."
+          default: "Morgen wird {art} abgeholt. Bitte stellen Sie den Müll heute Abend raus."
+          selector:
+            text: {}
+        morgens_aktiv:
+          name: Auch am Morgen des Abholtags erinnern
+          default: false
+          selector:
+            boolean: {}
+        zeit_morgens:
+          name: Erinnerung am Abholtag um
+          default: "06:30:00"
+          selector:
+            time: {}
+        text_morgens:
+          name: Text am Abholtag
+          description: "{art} wird durch die Müllart ersetzt."
+          default: "Heute wird {art} abgeholt. Bitte stellen Sie den Müll raus, falls noch nicht geschehen."
+          selector:
+            text: {}
+    klingel:
+      name: Türklingel
+      icon: mdi:doorbell
+      collapsed: true
+      input:
+        geraete_klingel:
+          name: Handys
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+        klingel_skript:
+          name: Türklingel-Skript
+          description: Das Skript aus dem Blueprint IHA Türklingel. Läuft es los, wird benachrichtigt.
+          default: ""
+          selector:
+            entity:
+              domain: script
+        kamera:
+          name: Kamera (optional)
+          description: Schickt ein aktuelles Bild mit.
+          default: ""
+          selector:
+            entity:
+              domain: camera
+        text_klingel:
+          name: Text
+          default: Es klingelt an der Haustür
+          selector:
+            text: {}
+        url_klingel:
+          name: Dashboard beim Antippen öffnen (optional)
+          description: z. B. /lovelace/0#pop-up-name
+          default: ""
+          selector:
+            text: {}
+    rauchmelder:
+      name: Rauchmelder
+      icon: mdi:smoke-detector-alert
+      collapsed: true
+      input:
+        geraete_rauch:
+          name: Handys
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+        rauchmelder_sensoren:
+          name: Rauchmelder
+          default: []
+          selector:
+            entity:
+              domain: binary_sensor
+              multiple: true
+        kritisch_rauch:
+          name: Kritische Benachrichtigung
+          description: Klingelt auch bei Lautlos und Fokus (iPhone und Android).
+          default: true
+          selector:
+            boolean: {}
+        entwarnung:
+          name: Entwarnung melden
+          default: true
+          selector:
+            boolean: {}
+
+trigger_variables:
+  t_klingel: !input klingel_skript
+  t_rauch: !input rauchmelder_sensoren
+
+triggers:
+  - trigger: time
+    at: !input zeit_vorabend
+    id: muell_vorabend
+  - trigger: time
+    at: !input zeit_morgens
+    id: muell_morgens
+  - trigger: template
+    value_template: "{{ t_klingel != '' and is_state(t_klingel, 'on') }}"
+    id: klingel
+  - trigger: template
+    value_template: "{{ t_rauch | select('is_state', 'on') | list | count > 0 }}"
+    id: rauch_alarm
+  - trigger: template
+    value_template: "{{ t_rauch | count > 0 and t_rauch | select('is_state', 'on') | list | count == 0 }}"
+    id: rauch_entwarnung
+
+variables:
+  geraete_muell: !input geraete_muell
+  geraete_klingel: !input geraete_klingel
+  geraete_rauch: !input geraete_rauch
+  abfall_sensor: !input abfall_sensor
+  text_vorabend: !input text_vorabend
+  text_morgens: !input text_morgens
+  morgens_aktiv: !input morgens_aktiv
+  kamera: !input kamera
+  text_klingel: !input text_klingel
+  url_klingel: !input url_klingel
+  rauch_sensoren: !input rauchmelder_sensoren
+  kritisch_rauch: !input kritisch_rauch
+  entwarnung: !input entwarnung
+  # Handys des passenden Bereichs, daraus notify.mobile_app_<gerätename>
+  geraete: >
+    {% if trigger.id.startswith('muell') %}{{ geraete_muell }}
+    {% elif trigger.id == 'klingel' %}{{ geraete_klingel }}
+    {% else %}{{ geraete_rauch }}{% endif %}
+  ziele: >
+    {% set ns = namespace(l=[]) %}
+    {% for d in geraete %}
+      {% set n = device_attr(d, 'name') %}
+      {% if n %}{% set ns.l = ns.l + ['notify.mobile_app_' ~ (n | slugify)] %}{% endif %}
+    {% endfor %}
+    {{ ns.l | unique | list }}
+  # Müll
+  zustand: "{{ states(abfall_sensor) }}"
+  art: >
+    {% if ' - ' in zustand %}{{ zustand.split(' - ', 1)[1] | trim }}{% else %}Müll{% endif %}
+  # Kamerabild, 60 wechselnde Dateinamen gegen alte Bilder im Zwischenspeicher
+  snap_name: "iha_klingel_{{ now().strftime('%S') }}.jpg"
+  snap_file: "/media/{{ snap_name }}"
+  snap_url: "/media/local/{{ snap_name }}"
+  # Rauchmelder
+  aktive_raeume: >
+    {% set ns = namespace(l=[]) %}
+    {% for s in rauch_sensoren | select('is_state', 'on') %}
+      {% set ns.l = ns.l + [area_name(s) or state_attr(s, 'friendly_name') or s] %}
+    {% endfor %}
+    {{ ns.l | unique | join(', ') }}
+  kritisch_daten: >
+    {{ {'push': {'sound': {'name': 'default', 'critical': 1, 'volume': 1.0}},
+        'ttl': 0, 'priority': 'high', 'channel': 'alarm_stream'} }}
+  # Inhalt der Nachricht je Bereich
+  titel: >
+    {% if trigger.id.startswith('muell') %}Müll
+    {% elif trigger.id == 'klingel' %}Türklingel
+    {% elif trigger.id == 'rauch_alarm' %}🔥 RAUCHMELDER
+    {% else %}Rauchmelder{% endif %}
+  nachricht: >
+    {% if trigger.id == 'muell_vorabend' and zustand.startswith('Morgen') %}
+      {{ text_vorabend | replace('{art}', art) }}
+    {% elif trigger.id == 'muell_morgens' and morgens_aktiv and zustand.startswith('Heute') %}
+      {{ text_morgens | replace('{art}', art) }}
+    {% elif trigger.id == 'klingel' %}
+      {{ text_klingel }} ({{ now().strftime('%H:%M') }} Uhr)
+    {% elif trigger.id == 'rauch_alarm' %}
+      Alarm: {{ aktive_raeume }}. Bitte sofort prüfen!
+    {% elif trigger.id == 'rauch_entwarnung' and entwarnung %}
+      Entwarnung: Alle Rauchmelder melden keinen Rauch mehr.
+    {% endif %}
+  daten: >
+    {% if trigger.id == 'klingel' %}
+      {% set d = {} %}
+      {% if kamera != '' %}{% set d = dict(d, image=snap_url, images=[snap_file]) %}{% endif %}
+      {% if url_klingel != '' %}{% set d = dict(d, url=url_klingel) %}{% endif %}
+      {{ d }}
+    {% elif trigger.id == 'rauch_alarm' and kritisch_rauch %}
+      {{ kritisch_daten }}
+    {% else %}
+      {{ {} }}
+    {% endif %}
+
+conditions:
+  - condition: template
+    value_template: "{{ ziele | count > 0 and nachricht | trim != '' }}"
+
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ trigger.id == 'klingel' and kamera != '' }}"
+    then:
+      - action: camera.snapshot
+        continue_on_error: true
+        target:
+          entity_id: "{{ kamera }}"
+        data:
+          filename: "{{ snap_file }}"
+  - repeat:
+      for_each: "{{ ziele }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: "{{ titel | trim }}"
+            message: "{{ nachricht | trim }}"
+            data: "{{ daten }}"
+
+mode: queued
+max: 10
