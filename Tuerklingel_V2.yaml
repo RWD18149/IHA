@@ -1,5 +1,5 @@
 blueprint:
-  name: IHA Türklingel V2.2
+  name: IHA Türklingel V2.3
   description: >
     Skript für die Türklingel. Wird von einer beliebigen Automation gestartet
     (Webhook, Klingel-Entität, KNX-Taster usw.). Macht ein Kamerabild, lässt tagsüber
@@ -119,9 +119,17 @@ blueprint:
       icon: mdi:cellphone-message
       collapsed: true
       input:
+        notify_devices:
+          name: Handys
+          description: Handys mit der Home-Assistant-App, die die Benachrichtigung mit Bild bekommen.
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
         notify_actions:
-          name: Benachrichtigungs-Aktionen
-          description: Eine pro Zeile, z. B. notify.mobile_app_iphone_patric oder notify.smtp
+          name: Weitere Benachrichtigungs-Aktionen (optional)
+          description: Eine pro Zeile, z. B. notify.smtp. Für Handys reicht die Auswahl oben.
           default: []
           selector:
             text:
@@ -158,7 +166,16 @@ variables:
   flash_count: !input flash_count
   flash_s: !input flash_seconds
   flash_day: !input flash_also_day
-  notify_list: !input notify_actions
+  notify_devices: !input notify_devices
+  notify_extra: !input notify_actions
+  # Aus den gewählten Handys die Aktion notify.mobile_app_<gerätename> bilden
+  notify_list: >
+    {% set ns = namespace(l=[]) %}
+    {% for d in notify_devices %}
+      {% set n = device_attr(d, 'name') %}
+      {% if n %}{% set ns.l = ns.l + ['notify.mobile_app_' ~ (n | slugify)] %}{% endif %}
+    {% endfor %}
+    {{ (ns.l + (notify_extra | list)) | unique | list }}
   n_title: !input notify_title
   n_message: !input notify_message
   n_url: !input notify_url
